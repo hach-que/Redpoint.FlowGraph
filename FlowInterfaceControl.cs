@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
-using System.Data;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
@@ -16,7 +15,7 @@ namespace Redpoint.FlowGraph
     /// <summary>
     /// A general control for flow graphs.
     /// </summary>
-    public partial class FlowInterfaceControl : UserControl
+    public class FlowInterfaceControl : UserControl
     {
         /// <summary>
         /// The list of all flow graph elements that the control owns.
@@ -101,7 +100,13 @@ namespace Redpoint.FlowGraph
 
         public FlowInterfaceControl()
         {
-            InitializeComponent();
+            this.SuspendLayout();
+            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.DoubleBuffered = true;
+            this.Name = "FlowInterfaceControl";
+            this.Size = new System.Drawing.Size(543, 376);
+            this.ResumeLayout(false);
 
             this.m_ReprocessingThread = new Thread(this.ReprocessThread);
             this.m_ReprocessingThread.IsBackground = true;
@@ -349,6 +354,20 @@ namespace Redpoint.FlowGraph
             );
         }
 
+        /// <summary>
+        /// Invalidates the current control, forcing a
+        /// redraw of all flow elements.
+        /// </summary>
+        public void Invalidate()
+        {
+            base.Invalidate();
+        }
+
+        /// <summary>
+        /// Pans the control by the specified amount.
+        /// </summary>
+        /// <param name="x">The X amount to pan by.</param>
+        /// <param name="y">The Y amount to pan by.</param>
         public void Pan(int x, int y)
         {
             foreach (FlowElement el in this.m_Elements)
@@ -359,15 +378,21 @@ namespace Redpoint.FlowGraph
             this.Invalidate();
         }
 
-        internal void AddElementAtMouse(LayerFlowElement lfe)
+        /// <summary>
+        /// Adds the element at the current mouse position.
+        /// </summary>
+        public void AddElementAtMouse(FlowElement flowElement)
         {
-            lfe.X = (int)(this.m_LastContextMenuOpenLocation.X / this.Zoom);
-            lfe.Y = (int)(this.m_LastContextMenuOpenLocation.Y / this.Zoom);
-            this.Elements.Add(lfe);
-            this.Invalidate(lfe.InvalidatingRegion);
+            flowElement.X = (int)(this.m_LastContextMenuOpenLocation.X / this.Zoom);
+            flowElement.Y = (int)(this.m_LastContextMenuOpenLocation.Y / this.Zoom);
+            this.Elements.Add(flowElement);
+            this.Invalidate(flowElement.InvalidatingRegion);
         }
 
-        internal void PushForReprocessing(FlowElement flowElement)
+        /// <summary>
+        /// Pushes an element on the queue for reprocessing.
+        /// </summary>
+        public void PushForReprocessing(FlowElement flowElement)
         {
             if (!this.m_ElementsToReprocess.Contains(flowElement))
                 this.m_ElementsToReprocess.Add(flowElement);

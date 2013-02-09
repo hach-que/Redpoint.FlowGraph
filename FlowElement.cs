@@ -190,7 +190,7 @@ namespace Redpoint.FlowGraph
                 return el.OutputConnectors.IndexOf(fl);
         }
 
-        internal IEnumerable<Rectangle> GetConnectorRegionsToInvalidate()
+        public IEnumerable<Rectangle> GetConnectorRegionsToInvalidate()
         {
             foreach (FlowConnector f in this.InputConnectors)
                 foreach (Rectangle r in f.GetConnectorRegionsToInvalidate())

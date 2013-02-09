@@ -42,17 +42,8 @@
     <Compile Include="FlowInterfaceControl.cs">
       <SubType>UserControl</SubType>
     </Compile>
-    <Compile Include="FlowInterfaceControl.Designer.cs">
-      <DependentUpon>FlowInterfaceControl.cs</DependentUpon>
-    </Compile>
     <Compile Include="ListOfFlowElements.cs" />
     <Compile Include="ZoomExtensions.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
-  <ItemGroup>
-    <EmbeddedResource Include="FlowInterfaceControl.resx">
-      <DependentUpon>FlowInterfaceControl.cs</DependentUpon>
-      <LogicalName>FlowInterfaceControl.resx</LogicalName>
-    </EmbeddedResource>
-  </ItemGroup>
 </Project>

@@ -6,7 +6,7 @@
 using System;
 using System.Drawing;
 
-namespace Tychaia.ProceduralGeneration.Flow
+namespace Redpoint.FlowGraph
 {
     public static class ZoomExtensions
     {
