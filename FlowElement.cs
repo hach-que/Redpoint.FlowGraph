@@ -111,7 +111,7 @@ namespace Redpoint.FlowGraph
                     + (FlowConnector.CONNECTOR_PADDING * 3 + FlowConnector.CONNECTOR_SIZE) * 2
                     + (this.InputConnectors.Count == 0 ? 0 : this.InputConnectors.Max(v => v.InvalidationWidth))
                     + (this.OutputConnectors.Count == 0 ? 0 : this.OutputConnectors.Max(v => v.InvalidationWidth)),
-                    this.Height
+                    this.Height + (this.m_AdditionalInformation == null ? 0 : this.m_AdditionalInformation.Height)
                 );
             }
         }
@@ -163,6 +163,12 @@ namespace Redpoint.FlowGraph
             int eih = (int)Math.Floor(el.ImageHeight * re.Zoom);
             int etx = (int)((el.X + 4) * re.Zoom);
             int ety = (int)((el.Y + 4) * re.Zoom);
+            int aiw = 0, aih = 0;
+            if (el.m_AdditionalInformation != null)
+            {
+                aiw = (int)Math.Floor(el.m_AdditionalInformation.Width * re.Zoom);
+                aih = (int)Math.Floor(el.m_AdditionalInformation.Height * re.Zoom);
+            }
 
             re.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighSpeed;
             re.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
@@ -170,9 +176,12 @@ namespace Redpoint.FlowGraph
             re.Graphics.FillRectangle(selected ? m_TitleHighlight : SystemBrushes.Control, ex, ey, ew - 1 * re.Zoom, eh - 1 * re.Zoom);
             re.Graphics.DrawRectangle(Pens.Black, ex, ey, ew - 1 * re.Zoom, eh - 1 * re.Zoom);
             re.Graphics.DrawString(el.Name, re.Font, SystemBrushes.ControlText, new PointF(etx, ety));
-            Image img = el.Image;
-            if (img != null)
-                re.Graphics.DrawImage(img, ex + 1 * re.Zoom, ey + 21 * re.Zoom, eiw, eih);
+            var image = el.Image;
+            if (image != null)
+                re.Graphics.DrawImage(image, ex + 1 * re.Zoom, ey + 21 * re.Zoom, eiw, eih);
+            var additional = el.m_AdditionalInformation;
+            if (additional != null)
+                re.Graphics.DrawImage(additional, ex + 1 * re.Zoom, ey + 21 * re.Zoom + eih, aiw, aih);
 
             foreach (FlowConnector fl in el.OutputConnectors)
                 FlowConnector.RenderTo(fl, re);
@@ -199,6 +208,12 @@ namespace Redpoint.FlowGraph
                 foreach (Rectangle r in f.GetConnectorRegionsToInvalidate())
                     yield return r;
         }
+
+        /// <summary>
+        /// The additional information bitmap.  We can assume that this
+        /// won't change unless ObjectReprocessRequested() is called.
+        /// </summary>
+        protected internal Bitmap m_AdditionalInformation = null;
 
         public virtual object GetObjectToInspect()
         {
