@@ -358,7 +358,7 @@ namespace Redpoint.FlowGraph
         /// Invalidates the current control, forcing a
         /// redraw of all flow elements.
         /// </summary>
-        public void Invalidate()
+        public new void Invalidate()
         {
             base.Invalidate();
         }
