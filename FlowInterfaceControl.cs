@@ -1,14 +1,10 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
-using System.Text;
-using System.Windows.Forms;
-using System.Collections.ObjectModel;
 using System.Threading;
-using System.Collections.Concurrent;
-using System.Runtime.Serialization;
+using System.Windows.Forms;
 
 namespace Redpoint.FlowGraph
 {
@@ -44,13 +40,25 @@ namespace Redpoint.FlowGraph
         private int m_AllElementPanOldX = 0;
         private int m_AllElementPanOldY = 0;
         private Thread m_ReprocessingThread;
-        private ConcurrentBag<FlowElement> m_ElementsToReprocess = new ConcurrentBag<FlowElement>();
+        private ConcurrentStack<FlowElement> m_ElementsToReprocess = new ConcurrentStack<FlowElement>();
         private FlowConnector m_ActiveConnection = null;
 
         /// <summary>
         /// Occurs when selected flow element changes.
         /// </summary>
         public event EventHandler SelectedElementChanged;
+
+        public class ElementsInQueueCountChangedEventArgs : EventArgs
+        {
+            public int Count;
+        }
+
+        public delegate void ElementsInQueueCountChangedHandler(object sender,Redpoint.FlowGraph.FlowInterfaceControl.ElementsInQueueCountChangedEventArgs e);
+
+        /// <summary>
+        /// Occurs when the number of elements currently in the queue for reprocessing has changed.
+        /// </summary>
+        public event ElementsInQueueCountChangedHandler ElementsInQueueCountChanged;
 
         /// <summary>
         /// The currently selected flow element in the control.
@@ -101,11 +109,11 @@ namespace Redpoint.FlowGraph
         public FlowInterfaceControl()
         {
             this.SuspendLayout();
-            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+            this.AutoScaleDimensions = new SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.DoubleBuffered = true;
             this.Name = "FlowInterfaceControl";
-            this.Size = new System.Drawing.Size(543, 376);
+            this.Size = new Size(543, 376);
             this.ResumeLayout(false);
 
             this.m_ReprocessingThread = new Thread(this.ReprocessThread);
@@ -126,10 +134,13 @@ namespace Redpoint.FlowGraph
                 Thread.Sleep(0);
 
                 FlowElement el;
-                if (!this.m_ElementsToReprocess.TryTake(out el))
-                    continue;
+                if (this.m_ElementsToReprocess.TryPop(out el))
+                {
+                    el.ObjectReprocessRequested();
 
-                el.ObjectReprocessRequested();
+                    if (this.ElementsInQueueCountChanged != null)
+                        this.Invoke(new Action(() => this.ElementsInQueueCountChanged(this, new ElementsInQueueCountChangedEventArgs { Count = this.m_ElementsToReprocess.Count })));
+                }
             }
         }
 
@@ -142,7 +153,7 @@ namespace Redpoint.FlowGraph
             e.Graphics.FillRectangle(SystemBrushes.ControlDark, e.ClipRectangle);
 
             // Render each flow element.
-            RenderAttributes re = new RenderAttributes
+            var re = new RenderAttributes
             {
                 Graphics = e.Graphics,
                 Zoom = this.Zoom,
@@ -198,7 +209,7 @@ namespace Redpoint.FlowGraph
                 // connector.
                 if (this.SelectedElement == null && this.m_ActiveConnection == null)
                 {
-                    Rectangle range = new Rectangle(
+                    var range = new Rectangle(
                         e.X - FlowConnector.CONNECTOR_SIZE / 2,
                         e.Y - FlowConnector.CONNECTOR_SIZE / 2,
                         FlowConnector.CONNECTOR_SIZE * 2,
@@ -230,7 +241,7 @@ namespace Redpoint.FlowGraph
                 // active connection, we probably want to make the connection.
                 else if (this.m_ActiveConnection != null)
                 {
-                    Rectangle range = new Rectangle(
+                    var range = new Rectangle(
                         e.X - FlowConnector.CONNECTOR_SIZE / 2,
                         e.Y - FlowConnector.CONNECTOR_SIZE / 2,
                         FlowConnector.CONNECTOR_SIZE * 2,
@@ -249,22 +260,20 @@ namespace Redpoint.FlowGraph
                                     this.m_ActiveConnection = null;
                                     return;
                                 }
-                                else
-                                {
-                                    // Set the connection.
-                                    FlowConnector[] old = this.m_ActiveConnection.ConnectedTo;
-                                    List<FlowConnector> newFC = new List<FlowConnector>();
-                                    foreach (FlowConnector fc in old)
-                                        if (!newFC.Contains(fc))
-                                            newFC.Add(fc);
-                                    if (!newFC.Contains(ic))
-                                        newFC.Add(ic);
-                                    this.m_ActiveConnection.ConnectedTo = newFC.ToArray();
 
-                                    // Finish up by turning off connection mode.
-                                    this.m_ActiveConnection = null;
-                                    return;
-                                }
+                                // Set the connection.
+                                var old = this.m_ActiveConnection.ConnectedTo;
+                                var newFC = new List<FlowConnector>();
+                                foreach (FlowConnector fc in old)
+                                    if (!newFC.Contains(fc))
+                                        newFC.Add(fc);
+                                if (!newFC.Contains(ic))
+                                    newFC.Add(ic);
+                                this.m_ActiveConnection.ConnectedTo = newFC.ToArray();
+
+                                // Finish up by turning off connection mode.
+                                this.m_ActiveConnection = null;
+                                return;
                             }
                         }
 
@@ -333,7 +342,7 @@ namespace Redpoint.FlowGraph
             }
             else if (this.m_ActiveConnection != null)
             {
-                Rectangle r = new Rectangle(
+                var r = new Rectangle(
                     this.m_ActiveConnection.Center.X,
                     this.m_ActiveConnection.Center.Y,
                     this.m_MouseActiveConnectionLocation.X - this.m_ActiveConnection.Center.X,
@@ -394,8 +403,14 @@ namespace Redpoint.FlowGraph
         /// </summary>
         public void PushForReprocessing(FlowElement flowElement)
         {
+            if (flowElement == null)
+                throw new ArgumentNullException("flowElement");
             if (!this.m_ElementsToReprocess.Contains(flowElement))
-                this.m_ElementsToReprocess.Add(flowElement);
+            {
+                this.m_ElementsToReprocess.Push(flowElement);
+                if (this.ElementsInQueueCountChanged != null)
+                    this.Invoke(new Action(() => this.ElementsInQueueCountChanged(this, new ElementsInQueueCountChangedEventArgs { Count = this.m_ElementsToReprocess.Count })));
+            }
         }
     }
 
