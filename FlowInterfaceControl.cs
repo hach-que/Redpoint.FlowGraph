@@ -138,7 +138,7 @@ namespace Redpoint.FlowGraph
                 {
                     el.ObjectReprocessRequested();
 
-                    if (this.ElementsInQueueCountChanged != null)
+                    if (this.ElementsInQueueCountChanged != null && this.IsHandleCreated)
                         this.Invoke(new Action(() => this.ElementsInQueueCountChanged(this, new ElementsInQueueCountChangedEventArgs { Count = this.m_ElementsToReprocess.Count })));
                 }
             }
