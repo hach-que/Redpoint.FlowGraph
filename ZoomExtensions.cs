@@ -23,6 +23,21 @@ namespace Redpoint.FlowGraph
                 (int)(p.Width * f),
                 (int)(p.Height * f));
         }
+        
+        public static Rectangle Fix(this Rectangle r)
+        {
+            if (r.Width < 0)
+            {
+                r.X += r.Width;
+                r.Width = Math.Abs(r.Width);
+            }
+            if (r.Height < 0)
+            {
+                r.Y += r.Height;
+                r.Height = Math.Abs(r.Height);
+            }
+            return r;
+        }
     }
 }
 

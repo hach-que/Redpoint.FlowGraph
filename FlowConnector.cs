@@ -49,6 +49,11 @@ namespace Redpoint.FlowGraph
             set;
         }
 
+        public virtual bool CanConnectTo(FlowConnector connector)
+        {
+            return true;
+        }
+
         private float m_CenterZoomAdjustment = 1.0f;
 
         public Point Center

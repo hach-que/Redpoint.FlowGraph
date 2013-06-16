@@ -191,12 +191,11 @@ namespace Redpoint.FlowGraph
 
         #endregion
 
-        internal static int GetConnectorIndex(FlowElement el, FlowConnector fl)
+        public static int GetConnectorIndex(FlowElement el, FlowConnector fl)
         {
             if (fl.IsInput)
                 return el.InputConnectors.IndexOf(fl);
-            else
-                return el.OutputConnectors.IndexOf(fl);
+            return el.OutputConnectors.IndexOf(fl);
         }
 
         public IEnumerable<Rectangle> GetConnectorRegionsToInvalidate()

@@ -39,26 +39,12 @@ namespace Redpoint.FlowGraph
         private int m_AllElementPanY = 0;
         private int m_AllElementPanOldX = 0;
         private int m_AllElementPanOldY = 0;
-        private Thread m_ReprocessingThread;
-        private ConcurrentStack<FlowElement> m_ElementsToReprocess = new ConcurrentStack<FlowElement>();
         private FlowConnector m_ActiveConnection = null;
 
         /// <summary>
         /// Occurs when selected flow element changes.
         /// </summary>
         public event EventHandler SelectedElementChanged;
-
-        public class ElementsInQueueCountChangedEventArgs : EventArgs
-        {
-            public int Count;
-        }
-
-        public delegate void ElementsInQueueCountChangedHandler(object sender,Redpoint.FlowGraph.FlowInterfaceControl.ElementsInQueueCountChangedEventArgs e);
-
-        /// <summary>
-        /// Occurs when the number of elements currently in the queue for reprocessing has changed.
-        /// </summary>
-        public event ElementsInQueueCountChangedHandler ElementsInQueueCountChanged;
 
         /// <summary>
         /// The currently selected flow element in the control.
@@ -72,10 +58,10 @@ namespace Redpoint.FlowGraph
             set
             {
                 if (this.m_SelectedElement != null)
-                    this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom));
+                    this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom).Fix());
                 this.m_SelectedElement = value;
                 if (this.m_SelectedElement != null)
-                    this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom));
+                    this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom).Fix());
                 if (this.SelectedElementChanged != null)
                     this.SelectedElementChanged(this, new EventArgs());
             }
@@ -115,33 +101,6 @@ namespace Redpoint.FlowGraph
             this.Name = "FlowInterfaceControl";
             this.Size = new Size(543, 376);
             this.ResumeLayout(false);
-
-            this.m_ReprocessingThread = new Thread(this.ReprocessThread);
-            this.m_ReprocessingThread.IsBackground = true;
-            this.m_ReprocessingThread.Start();
-        }
-
-        ~FlowInterfaceControl()
-        {
-            if (this.m_ReprocessingThread != null)
-                this.m_ReprocessingThread.Abort();
-        }
-
-        private void ReprocessThread()
-        {
-            while (true)
-            {
-                Thread.Sleep(0);
-
-                FlowElement el;
-                if (this.m_ElementsToReprocess.TryPop(out el))
-                {
-                    el.ObjectReprocessRequested();
-
-                    if (this.ElementsInQueueCountChanged != null && this.IsHandleCreated)
-                        this.Invoke(new Action(() => this.ElementsInQueueCountChanged(this, new ElementsInQueueCountChangedEventArgs { Count = this.m_ElementsToReprocess.Count })));
-                }
-            }
         }
 
         private Point m_MouseActiveConnectionLocation;
@@ -181,7 +140,28 @@ namespace Redpoint.FlowGraph
             // Don't do anything on right-click.
             if (e.Button == System.Windows.Forms.MouseButtons.Right)
             {
-                this.m_LastContextMenuOpenLocation = e.Location;
+                if (this.m_ActiveConnection != null)
+                {
+                    this.m_ActiveConnection = null;
+                    this.Invalidate();
+                }
+                else 
+                {
+                    this.SelectedElement = null;
+                    foreach (FlowElement el in this.m_Elements.Reverse<FlowElement>())
+                    {
+                        if (el.Region.Contains(e.Location.Apply(1 / this.Zoom)))
+                        {
+                            this.SelectedElement = el;
+                            this.m_SelectedElementStillHeldDown = true;
+                            this.m_SelectedElementDragX = (int)(e.X / this.Zoom) - el.X;
+                            this.m_SelectedElementDragY = (int)(e.Y / this.Zoom) - el.Y;
+                            break;
+                        }
+                    }
+                    
+                    this.m_LastContextMenuOpenLocation = e.Location;
+                }
                 return;
             }
 
@@ -204,7 +184,7 @@ namespace Redpoint.FlowGraph
                         break;
                     }
                 }
-
+                
                 // If we didn't select an element, see if we clicked on a flow
                 // connector.
                 if (this.SelectedElement == null && this.m_ActiveConnection == null)
@@ -254,10 +234,13 @@ namespace Redpoint.FlowGraph
                             if (range.Contains(ic.Center))
                             {
                                 // The user wants to connect this up.  Is it possible?
-                                if (this.m_ActiveConnection.IsInput)
+                                if (this.m_ActiveConnection.IsInput ||
+                                    !this.m_ActiveConnection.CanConnectTo(ic) ||
+                                    !ic.CanConnectTo(this.m_ActiveConnection))
                                 {
                                     // Can't connect an input to an input..
                                     this.m_ActiveConnection = null;
+                                    this.Invalidate();
                                     return;
                                 }
 
@@ -273,19 +256,45 @@ namespace Redpoint.FlowGraph
 
                                 // Finish up by turning off connection mode.
                                 this.m_ActiveConnection = null;
+                                this.Invalidate();
                                 return;
                             }
                         }
 
                         // Check output connectors.
-                        /*foreach (FlowConnector ic in el.OutputConnectors)
+                        foreach (FlowConnector ic in el.OutputConnectors)
                         {
                             if (range.Contains(ic.Center))
                             {
-                                this.m_ActiveConnection = ic;
+                                // The user wants to connect this up.  Is it possible?
+                                if (this.m_ActiveConnection.IsOutput ||
+                                    !this.m_ActiveConnection.CanConnectTo(ic) ||
+                                    !ic.CanConnectTo(this.m_ActiveConnection))
+                                {
+                                    // Can't connect an output to an output..
+                                    this.m_ActiveConnection = null;
+                                    this.Invalidate();
+                                    return;
+                                }
+
+                                // Set the connection.
+                                var old = this.m_ActiveConnection.ConnectedTo;
+                                foreach (var fc in old)
+                                {
+                                    var newFC = new List<FlowConnector>();
+                                    foreach (var ffc in fc.ConnectedTo)
+                                        if (ffc != this.m_ActiveConnection)
+                                            newFC.Add(ffc);
+                                    fc.ConnectedTo = newFC.ToArray();
+                                }
+                                this.m_ActiveConnection.ConnectedTo = new[] { ic };
+
+                                // Finish up by turning off connection mode.
+                                this.m_ActiveConnection = null;
+                                this.Invalidate();
                                 return;
                             }
-                        }*/
+                        }
                     }
                 }
             }
@@ -318,14 +327,14 @@ namespace Redpoint.FlowGraph
             // If we are dragging an element....
             if (this.m_SelectedElementStillHeldDown && this.m_SelectedElement != null)
             {
-                this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom));
+                this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom).Fix());
                 foreach (Rectangle r in this.m_SelectedElement.GetConnectorRegionsToInvalidate())
-                    this.Invalidate(r.Apply(this.Zoom));
+                    this.Invalidate(r.Apply(this.Zoom).Fix());
                 this.m_SelectedElement.X = (int)(e.X / this.Zoom) - this.m_SelectedElementDragX;
                 this.m_SelectedElement.Y = (int)(e.Y / this.Zoom) - this.m_SelectedElementDragY;
                 this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom));
                 foreach (Rectangle r in this.m_SelectedElement.GetConnectorRegionsToInvalidate())
-                    this.Invalidate(r.Apply(this.Zoom));
+                    this.Invalidate(r.Apply(this.Zoom).Fix());
             }
             else if (this.m_PanningStillHeldDown)
             {
@@ -348,14 +357,14 @@ namespace Redpoint.FlowGraph
                     this.m_MouseActiveConnectionLocation.X - this.m_ActiveConnection.Center.X,
                     this.m_MouseActiveConnectionLocation.Y - this.m_ActiveConnection.Center.Y);
                 r.Inflate(r.Width > 0 ? 10 : -10, r.Height > 0 ? 10 : -10);
-                this.Invalidate(r);
+                this.Invalidate(r.Fix());
                 r = new Rectangle(
                     this.m_ActiveConnection.Center.X,
                     this.m_ActiveConnection.Center.Y,
                     e.X - this.m_ActiveConnection.Center.X,
                     e.Y - this.m_ActiveConnection.Center.Y);
                 r.Inflate(r.Width > 0 ? 10 : -10, r.Height > 0 ? 10 : -10);
-                this.Invalidate(r);
+                this.Invalidate(r.Fix());
             }
             this.m_MouseActiveConnectionLocation = new Point(
                 e.X,
@@ -395,7 +404,7 @@ namespace Redpoint.FlowGraph
             flowElement.X = (int)(this.m_LastContextMenuOpenLocation.X / this.Zoom);
             flowElement.Y = (int)(this.m_LastContextMenuOpenLocation.Y / this.Zoom);
             this.Elements.Add(flowElement);
-            this.Invalidate(flowElement.InvalidatingRegion);
+            this.Invalidate(flowElement.InvalidatingRegion.Fix());
         }
 
         /// <summary>
@@ -405,12 +414,7 @@ namespace Redpoint.FlowGraph
         {
             if (flowElement == null)
                 throw new ArgumentNullException("flowElement");
-            if (!this.m_ElementsToReprocess.Contains(flowElement))
-            {
-                this.m_ElementsToReprocess.Push(flowElement);
-                if (this.ElementsInQueueCountChanged != null)
-                    this.Invoke(new Action(() => this.ElementsInQueueCountChanged(this, new ElementsInQueueCountChangedEventArgs { Count = this.m_ElementsToReprocess.Count })));
-            }
+            flowElement.ObjectReprocessRequested();
         }
     }
 
