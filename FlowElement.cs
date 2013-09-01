@@ -177,10 +177,10 @@ namespace Redpoint.FlowGraph
             re.Graphics.DrawRectangle(Pens.Black, ex, ey, ew - 1 * re.Zoom, eh - 1 * re.Zoom);
             re.Graphics.DrawString(el.Name, re.Font, SystemBrushes.ControlText, new PointF(etx, ety));
             var image = el.Image;
-            if (image != null)
+            if (image != null && ex + 1 * re.Zoom + eiw > 0 && ey + 21 * re.Zoom + eih > 0)
                 re.Graphics.DrawImage(image, ex + 1 * re.Zoom, ey + 21 * re.Zoom, eiw, eih);
             var additional = el.m_AdditionalInformation;
-            if (additional != null)
+            if (additional != null && ex + 1 * re.Zoom + aiw > 0 && ey + 21 * re.Zoom + eih + aih > 0)
                 re.Graphics.DrawImage(additional, ex + 1 * re.Zoom, ey + 21 * re.Zoom + eih, aiw, aih);
 
             foreach (FlowConnector fl in el.OutputConnectors)
