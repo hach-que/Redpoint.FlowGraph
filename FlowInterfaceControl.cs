@@ -24,6 +24,11 @@ namespace Redpoint.FlowGraph
         private FlowElement m_SelectedElement = null;
 
         /// <summary>
+        /// A list of currently selected elements.
+        /// </summary>
+        private ListOfFlowElements m_SelectedElements = new ListOfFlowElements(); 
+
+        /// <summary>
         /// Whether the current selected element is still being held down
         /// by the mouse.
         /// </summary>
@@ -33,13 +38,29 @@ namespace Redpoint.FlowGraph
         /// Whether the user is still panning the control.
         /// </summary>
         private bool m_PanningStillHeldDown = false;
-        private int m_SelectedElementDragX = 0;
-        private int m_SelectedElementDragY = 0;
         private int m_AllElementPanX = 0;
         private int m_AllElementPanY = 0;
         private int m_AllElementPanOldX = 0;
         private int m_AllElementPanOldY = 0;
         private FlowConnector m_ActiveConnection = null;
+
+        private Dictionary<FlowElement, Point> m_SelectedElementsDrag = new Dictionary<FlowElement, Point>();
+
+        /// <summary>
+        /// Whether the user will select multiple elements on next mouse press.
+        /// </summary>
+        private bool m_WillMultiselect = false;
+
+        /// <summary>
+        /// Whether the user is currently selecting multiple elements.
+        /// </summary>
+        private bool m_Multiselecting = false;
+        private int m_MultiselectStartX;
+        private int m_MultiselectStartY;
+        private int m_MultiselectEndX;
+        private int m_MultiselectEndY;
+        private int m_MultiselectPreviousEndX;
+        private int m_MultiselectPreviousEndY;
 
         /// <summary>
         /// Occurs when selected flow element changes.
@@ -60,10 +81,22 @@ namespace Redpoint.FlowGraph
                 if (this.m_SelectedElement != null)
                     this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom).Fix());
                 this.m_SelectedElement = value;
+                this.m_SelectedElements.Clear();
                 if (this.m_SelectedElement != null)
+                {
+                    this.m_SelectedElements.Add(this.m_SelectedElement);
                     this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom).Fix());
+                }
                 if (this.SelectedElementChanged != null)
                     this.SelectedElementChanged(this, new EventArgs());
+            }
+        }
+
+        public ListOfFlowElements SelectedElements
+        {
+            get
+            {
+                return this.m_SelectedElements;
             }
         }
 
@@ -119,7 +152,7 @@ namespace Redpoint.FlowGraph
                 Font = new Font(SystemFonts.DefaultFont.FontFamily, SystemFonts.DefaultFont.Size * this.Zoom)
             };
             foreach (FlowElement el in this.m_Elements)
-                FlowElement.RenderTo(el, re, this.m_SelectedElement == el);
+                FlowElement.RenderTo(el, re, this.m_SelectedElement == el || this.m_SelectedElements.Contains(el));
 
             // Render the active connection line.
             if (this.m_ActiveConnection != null)
@@ -127,6 +160,21 @@ namespace Redpoint.FlowGraph
                 e.Graphics.DrawLine(new Pen(Color.Red, 3),
                     this.m_ActiveConnection.Center,
                     this.m_MouseActiveConnectionLocation
+                );
+            }
+
+            if (this.m_Multiselecting)
+            {
+                var r = new Rectangle(
+                    this.m_MultiselectStartX,
+                    this.m_MultiselectStartY,
+                    this.m_MultiselectEndX - this.m_MultiselectStartX,
+                    this.m_MultiselectEndY - this.m_MultiselectStartY);
+                r.Fix();
+
+                e.Graphics.DrawRectangle(
+                    new Pen(Color.Red, 3),
+                    r
                 );
             }
         }
@@ -154,8 +202,9 @@ namespace Redpoint.FlowGraph
                         {
                             this.SelectedElement = el;
                             this.m_SelectedElementStillHeldDown = true;
-                            this.m_SelectedElementDragX = (int)(e.X / this.Zoom) - el.X;
-                            this.m_SelectedElementDragY = (int)(e.Y / this.Zoom) - el.Y;
+                            this.m_SelectedElementsDrag[el] = new Point(
+                                (int)(e.X / this.Zoom) - el.X,
+                                (int)(e.Y / this.Zoom) - el.Y);
                             break;
                         }
                     }
@@ -172,19 +221,58 @@ namespace Redpoint.FlowGraph
             // Check to see if the mouse is over an element during left press.
             if (e.Button == System.Windows.Forms.MouseButtons.Left)
             {
-                this.SelectedElement = null;
+                if (this.m_WillMultiselect)
+                {
+                    this.m_Multiselecting = true;
+                    this.m_MultiselectStartX = e.X;
+                    this.m_MultiselectStartY = e.Y;
+                    this.m_MultiselectEndX = e.X;
+                    this.m_MultiselectEndY = e.Y;
+                    this.m_MultiselectPreviousEndX = e.X;
+                    this.m_MultiselectPreviousEndY = e.Y;
+                    return;
+                }
+
+                if (this.SelectedElements.Count <= 1)
+                {
+                    this.SelectedElement = null;
+                }
+
                 foreach (FlowElement el in this.m_Elements.Reverse<FlowElement>())
                 {
                     if (el.Region.Contains(e.Location.Apply(1 / this.Zoom)))
                     {
-                        this.SelectedElement = el;
+                        if (this.SelectedElements.Count <= 1)
+                        {
+                            this.SelectedElement = el;
+                        }
+
                         this.m_SelectedElementStillHeldDown = true;
-                        this.m_SelectedElementDragX = (int)(e.X / this.Zoom) - el.X;
-                        this.m_SelectedElementDragY = (int)(e.Y / this.Zoom) - el.Y;
+                        this.m_SelectedElementsDrag[el] = new Point(
+                            (int)(e.X / this.Zoom) - el.X,
+                            (int)(e.Y / this.Zoom) - el.Y);
                         break;
                     }
                 }
-                
+
+                if (this.SelectedElements.Count > 1)
+                {
+                    foreach (FlowElement el in this.m_Elements.Reverse<FlowElement>())
+                    {
+                        if (this.SelectedElements.Contains(el))
+                        {
+                            this.m_SelectedElementsDrag[el] = new Point(
+                                (int)(e.X / this.Zoom) - el.X,
+                                (int)(e.Y / this.Zoom) - el.Y);
+                        }
+                    }
+                }
+
+                if (this.SelectedElements.Count > 1 && !this.m_SelectedElementStillHeldDown)
+                {
+                    this.SelectedElement = null;
+                }
+
                 // If we didn't select an element, see if we clicked on a flow
                 // connector.
                 if (this.SelectedElement == null && this.m_ActiveConnection == null)
@@ -313,11 +401,15 @@ namespace Redpoint.FlowGraph
         {
             base.OnMouseUp(e);
 
+            if (this.m_Multiselecting)
+            {
+                this.EndMultiselect();
+            }
+
             // We are no longer dragging.
             this.m_PanningStillHeldDown = false;
             this.m_SelectedElementStillHeldDown = false;
-            this.m_SelectedElementDragX = 0;
-            this.m_SelectedElementDragY = 0;
+            this.m_SelectedElementsDrag.Clear();
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
@@ -325,16 +417,46 @@ namespace Redpoint.FlowGraph
             base.OnMouseMove(e);
 
             // If we are dragging an element....
-            if (this.m_SelectedElementStillHeldDown && this.m_SelectedElement != null)
+            if (this.m_Multiselecting)
             {
-                this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom).Fix());
-                foreach (Rectangle r in this.m_SelectedElement.GetConnectorRegionsToInvalidate())
-                    this.Invalidate(r.Apply(this.Zoom).Fix());
-                this.m_SelectedElement.X = (int)(e.X / this.Zoom) - this.m_SelectedElementDragX;
-                this.m_SelectedElement.Y = (int)(e.Y / this.Zoom) - this.m_SelectedElementDragY;
-                this.Invalidate(this.m_SelectedElement.InvalidatingRegion.Apply(this.Zoom));
-                foreach (Rectangle r in this.m_SelectedElement.GetConnectorRegionsToInvalidate())
-                    this.Invalidate(r.Apply(this.Zoom).Fix());
+                this.m_MultiselectPreviousEndX = this.m_MultiselectEndX;
+                this.m_MultiselectPreviousEndY = this.m_MultiselectEndY;
+                this.m_MultiselectEndX = e.X;
+                this.m_MultiselectEndY = e.Y;
+                var r = new Rectangle(
+                    this.m_MultiselectStartX,
+                    this.m_MultiselectStartY,
+                    this.m_MultiselectPreviousEndX - this.m_MultiselectStartX,
+                    this.m_MultiselectPreviousEndY - this.m_MultiselectStartY);
+                r.Inflate(r.Width > 0 ? 10 : -10, r.Height > 0 ? 10 : -10);
+                this.Invalidate(r.Fix());
+            }
+            else if (this.m_SelectedElementStillHeldDown && (this.m_SelectedElement != null || this.m_SelectedElements.Count > 1))
+            {
+                var toMove = this.m_SelectedElements;
+
+                if (this.m_SelectedElements.Count <= 1 && this.m_SelectedElement != null)
+                {
+                    toMove = new ListOfFlowElements { this.m_SelectedElement };
+                }
+
+                foreach (var el in toMove)
+                {
+                    this.Invalidate(el.InvalidatingRegion.Apply(this.Zoom).Fix());
+                    foreach (Rectangle r in el.GetConnectorRegionsToInvalidate())
+                    {
+                        this.Invalidate(r.Apply(this.Zoom).Fix());
+                    }
+
+                    el.X = (int)(e.X / this.Zoom) - this.m_SelectedElementsDrag[el].X;
+                    el.Y = (int)(e.Y / this.Zoom) - this.m_SelectedElementsDrag[el].Y;
+                    this.Invalidate(el.InvalidatingRegion.Apply(this.Zoom));
+
+                    foreach (Rectangle r in el.GetConnectorRegionsToInvalidate())
+                    {
+                        this.Invalidate(r.Apply(this.Zoom).Fix());
+                    }
+                }
             }
             else if (this.m_PanningStillHeldDown)
             {
@@ -370,6 +492,26 @@ namespace Redpoint.FlowGraph
                 e.X,
                 e.Y
             );
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+
+            if (e.KeyCode == Keys.ShiftKey)
+            {
+                this.m_WillMultiselect = true;
+            }
+        }
+
+        protected override void OnKeyUp(KeyEventArgs e)
+        {
+            base.OnKeyUp(e);
+
+            if (e.KeyCode == Keys.ShiftKey)
+            {
+                this.EndMultiselect();
+            }
         }
 
         /// <summary>
@@ -415,6 +557,32 @@ namespace Redpoint.FlowGraph
             if (flowElement == null)
                 throw new ArgumentNullException("flowElement");
             flowElement.ObjectReprocessRequested();
+        }
+
+        private void EndMultiselect()
+        {
+            this.m_Multiselecting = false;
+            this.m_WillMultiselect = false;
+
+            this.m_SelectedElements.Clear();
+
+            var r = new Rectangle(
+                this.m_MultiselectStartX,
+                this.m_MultiselectStartY,
+                this.m_MultiselectEndX - this.m_MultiselectStartX,
+                this.m_MultiselectEndY - this.m_MultiselectStartY);
+            r.Fix();
+            r = r.Apply(1 / this.Zoom);
+
+            foreach (FlowElement el in this.m_Elements.Reverse<FlowElement>())
+            {
+                if (r.IntersectsWith(el.Region))
+                {
+                    this.m_SelectedElements.Add(el);
+                }
+            }
+
+            this.Invalidate();
         }
     }
 
